@@ -1,7 +1,9 @@
-Advanced Android Sample App
+Go Ubiquitous - Based on Advanced Android Sample App
 ===================================
 
 Synchronizes weather information from OpenWeatherMap on Android Phones and Tablets. Used in the Udacity Advanced Android course.
+
+Added by nadajp: Sends weather data to watch, which displays it on the watch face.
 
 Pre-requisites
 --------------
