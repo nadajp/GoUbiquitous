@@ -38,6 +38,7 @@ import com.example.android.sunshine.app.muzei.WeatherMuzeiSource;
 import com.google.android.gms.common.ConnectionResult;
 import com.google.android.gms.common.api.GoogleApiClient;
 import com.google.android.gms.common.api.ResultCallback;
+import com.google.android.gms.wearable.Asset;
 import com.google.android.gms.wearable.DataApi;
 import com.google.android.gms.wearable.PutDataMapRequest;
 import com.google.android.gms.wearable.PutDataRequest;
@@ -48,6 +49,7 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
@@ -67,7 +69,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements
             "com.example.android.sunshine.app.ACTION_DATA_UPDATED";
     // Interval at which to sync with the weather, in seconds.
     // 60 seconds (1 minute) * 180 = 3 hours
-    public static final int SYNC_INTERVAL = 60; //60 * 180;
+    public static final int SYNC_INTERVAL = 60; // * 180;
     public static final int SYNC_FLEXTIME = SYNC_INTERVAL/3;
     private static final long DAY_IN_MILLIS = 1000 * 60 * 60 * 24;
     private static final int WEATHER_NOTIFICATION_ID = 3004;
@@ -111,6 +113,8 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements
     public static final int LOCATION_STATUS_UNKNOWN = 3;
     public static final int LOCATION_STATUS_INVALID = 4;
 
+    public static final String API_KEY = "***REMOVED***";
+
     private GoogleApiClient mGoogleApiClient;
 
     public SunshineSyncAdapter(Context context, boolean autoInitialize) {
@@ -141,7 +145,6 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements
         String format = "json";
         String units = "metric";
         int numDays = 14;
-        String apiKey = "***REMOVED***";
 
         try {
             // Construct the URL for the OpenWeatherMap query
@@ -160,7 +163,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements
                     .appendQueryParameter(FORMAT_PARAM, format)
                     .appendQueryParameter(UNITS_PARAM, units)
                     .appendQueryParameter(DAYS_PARAM, Integer.toString(numDays))
-                    .appendQueryParameter(APP_ID, apiKey)
+                    .appendQueryParameter(APP_ID, API_KEY)
                     .build();
 
             URL url = new URL(builtUri.toString());
@@ -419,26 +422,42 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements
         Cursor cursor = context.getContentResolver().query(weatherUri, NOTIFY_WEATHER_PROJECTION, null, null, null);
 
         if (cursor.moveToFirst()) {
-            int weatherId = cursor.getInt(INDEX_WEATHER_ID);
-            double high = cursor.getDouble(INDEX_MAX_TEMP);
-            double low = cursor.getDouble(INDEX_MIN_TEMP);
+            final int weatherId = cursor.getInt(INDEX_WEATHER_ID);
+            final double high = cursor.getDouble(INDEX_MAX_TEMP);
+            final double low = cursor.getDouble(INDEX_MIN_TEMP);
 
-            String strHigh = Utility.formatTemperature(context, high);
-            String strLow = Utility.formatTemperature(context, low);
+            final String strHigh = Utility.formatTemperature(context, high);
+            final String strLow = Utility.formatTemperature(context, low);
 
             Log.i(LOG_TAG, "high temp: " + strHigh);
             Log.i(LOG_TAG, "low temp: " + strLow);
 
+            final SharedPreferences prefs = PreferenceManager.getDefaultSharedPreferences(context);
+            int watch_weatherId = prefs.getInt(context.getString(R.string.pref_watch_weather_id), -1);
+            String watch_high = prefs.getString(context.getString(R.string.pref_watch_high), "");
+            String watch_low = prefs.getString(context.getString(R.string.pref_watch_low), "");
+
+            Log.i(LOG_TAG, "Watch ID: " + watch_weatherId + "   New Weather ID: " + weatherId);
+            Log.i(LOG_TAG, "Watch High: " + watch_high + "   New High: " + strHigh);
+            Log.i(LOG_TAG, "Watch Low: " + watch_low + "   New Low: " + strLow);
+
+
+            // nothing to update
+            if (weatherId == watch_weatherId && strHigh.equals(watch_high) && strLow.equals(watch_low)) {
+                Log.i(LOG_TAG, "Nothing to update.");
+                return;
+            }
+
             int iconId = Utility.getIconResourceForWeatherCondition(weatherId);
             Resources resources = context.getResources();
-            int artResourceId = Utility.getArtResourceForWeatherCondition(weatherId);
+            Bitmap icon = BitmapFactory.decodeResource(resources, iconId, null);
 
             PutDataMapRequest putDataMapRequest = PutDataMapRequest.create("/weather");
 
             putDataMapRequest.getDataMap().putString("high", strHigh);
             putDataMapRequest.getDataMap().putString("low", strLow);
-            putDataMapRequest.getDataMap().putInt("iconId", iconId);
-            putDataMapRequest.getDataMap().putLong("Time", System.currentTimeMillis());
+            Asset asset = createAssetFromBitmap(icon);
+            putDataMapRequest.getDataMap().putAsset("icon", asset);
 
             PutDataRequest request = putDataMapRequest.asPutDataRequest();
             request.setUrgent();
@@ -451,11 +470,23 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements
                             }
                             else {
                                 Log.i(LOG_TAG, "Sending Data Item to Wearable...");
+                                // save to prefs
+                                SharedPreferences.Editor editor = prefs.edit();
+                                editor.putInt(getContext().getString(R.string.pref_watch_weather_id), weatherId);
+                                editor.putString(getContext().getString(R.string.pref_watch_high), strHigh);
+                                editor.putString(getContext().getString(R.string.pref_watch_low), strLow);
+                                editor.apply();
                             }
                         }
                     });
         }
         cursor.close();
+    }
+
+    private static Asset createAssetFromBitmap(Bitmap bitmap) {
+        final ByteArrayOutputStream byteStream = new ByteArrayOutputStream();
+        bitmap.compress(Bitmap.CompressFormat.PNG, 100, byteStream);
+        return Asset.createFromBytes(byteStream.toByteArray());
     }
 
     private void notifyWeather() {
@@ -585,7 +616,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements
                 new String[]{locationSetting},
                 null);
 
-        if (locationCursor.moveToFirst()) {
+        if (locationCursor != null && locationCursor.moveToFirst()) {
             int locationIdIndex = locationCursor.getColumnIndex(WeatherContract.LocationEntry._ID);
             locationId = locationCursor.getLong(locationIdIndex);
         } else {
@@ -639,6 +670,7 @@ public class SunshineSyncAdapter extends AbstractThreadedSyncAdapter implements
      * @param context The context used to access the account service
      */
     public static void syncImmediately(Context context) {
+        Log.i("SyncAdapter", "syncImmediately...");
         Bundle bundle = new Bundle();
         bundle.putBoolean(ContentResolver.SYNC_EXTRAS_EXPEDITED, true);
         bundle.putBoolean(ContentResolver.SYNC_EXTRAS_MANUAL, true);

@@ -105,7 +105,7 @@ public class MainActivity extends AppCompatActivity implements ForecastFragment.
         }
 
         SunshineSyncAdapter.initializeSyncAdapter(this);
-        SunshineSyncAdapter.syncImmediately(this);
+        //SunshineSyncAdapter.syncImmediately(this);
 
         // If Google Play Services is not available, some features, such as GCM-powered weather
         // alerts, will not be available.
