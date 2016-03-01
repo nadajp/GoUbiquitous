@@ -339,7 +339,7 @@ public class MyWatchFace extends CanvasWatchFaceService {
             String text = String.format("%d:%02d", mTime.hour, mTime.minute);
             canvas.drawText(text, mXOffset, mYOffset, mTextPaint);
 
-            String weekday = new DateFormatSymbols().getShortWeekdays()[mTime.weekDay].toUpperCase();
+            String weekday = new DateFormatSymbols().getShortWeekdays()[mTime.weekDay+1].toUpperCase();
             String month = new DateFormatSymbols().getShortMonths()[mTime.month].toUpperCase();
 
             text = String.format("%s, %s %d %d", weekday, month, mTime.monthDay, mTime.year);
